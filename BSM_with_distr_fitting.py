@@ -368,15 +368,3 @@ print(f"\n Current price of {asset} with target date {Target_date} is {S}.\
       \n the corresponding option prices should be: \n")
 print(df)
     
-x = np.linspace(-4, 4, 1000)
-
-# Calculate the CDF values using the distribution object
-cdf_values = norm.cdf(x)
-plt.figure(figsize=(10, 6))
-plt.plot(x, cdf_values, label='CDF of Normal Distribution', color='blue')
-plt.title('Cumulative Distribution Function (CDF)')
-plt.xlabel('X values')
-plt.ylabel('Cumulative Probability')
-plt.grid(True)
-plt.legend()
-plt.show()
