@@ -13,12 +13,29 @@ from scipy import stats
 from scipy.stats import norm
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
+from scipy.stats import logistic
+import statsmodels.api as sm
+from scipy.stats import genhyperbolic
+import scipy
 
 # Input
-asset = "JPM"
-R = 12 * 2  # range of the strike prices
-r = 0.04  # risk free rate
-Target_date = [2024, 10, 18]
+# asset = "JPM"
+asset = input("Enter the asset ticker (e.g., 'AAPL'): ").strip().upper()
+
+# asset = "GS"
+R = 24  # range of the strike prices
+Target_date = [2024, 10, 18] #yyyy/mm/dd
+amount_years = 10
+##set frequency for sigma, if both zero, daily is used
+w = 0
+m = 1
+
+###
+###
+treasury_data = yf.download("^IRX")  # This is for the 13-week treasury yield
+rate = treasury_data['Adj Close'].tail(1).values[0] / 100
+r =  rate # risk free rate for a month 
+
 
 
 # Code
@@ -98,11 +115,12 @@ def return_options(prices, Ks, range_begin, range_end, option_types, stock_price
 
 
 # Going for average return in 30 days, so 30 days untill expiration
-data = get_data(asset, 2560)
+amount_days = amount_years * 365
+data = get_data(asset, amount_days)
 data = returns(data, 30)
 data
 
-returns_data = data['returns'].dropna()
+returns_data = data['returns'].dropna() #here is the omit value, so 256 in a earlier moment is insensible
 
 bins = 100
 
@@ -111,15 +129,14 @@ print("checkpoint bravo") #####
 
 
 # Create a histogram of the returns
-plt.figure(figsize=(8, 6))
-plt.hist(returns_data, bins=bins, edgecolor='black')
-plt.title(f'Histogram of Returns over a Period of a Month of {asset} ')
-plt.xlabel('Returns')
-plt.ylabel('Frequency')
-plt.grid(True)
-plt.show()
+# plt.figure(figsize=(8, 6))
+# plt.hist(returns_data, bins=bins, edgecolor='black')
+# plt.title(f'Histogram of Returns over a Period of a Month of {asset} ')
+# plt.xlabel('Returns')
+# plt.ylabel('Frequency')
+# plt.grid(True)
+# plt.show()
 
-print(returns_data)
 
 # Fitting
 # matplotlib inline
@@ -200,7 +217,7 @@ print("checkpoint charlie")##########
 
 ###
 ax = returns_data.plot(kind='hist', bins=50, density=True, label="Data",
-                       alpha=0.5, color=list(matplotlib.rcParams['axes.prop_cycle'])[1]['color'])
+                        alpha=0.5, color=list(matplotlib.rcParams['axes.prop_cycle'])[1]['color'])
 
 # Save plot limits
 dataYLim = ax.get_ylim()
@@ -210,6 +227,9 @@ dataYLim = ax.get_ylim()
 # Find best fit distribution
 best_distibutions = best_fit_distribution(returns_data, 200, ax)
 best_dist = best_distibutions[0]
+
+
+
 ###
 
 # Update plots
@@ -230,8 +250,8 @@ param_names = (best_dist[0].shapes + ', loc, scale').split(
     ', ') if best_dist[0].shapes else ['loc', 'scale']
 param_str = ', '.join(['{}={:0.2f}'.format(k, v)
                       for k, v in zip(param_names, best_dist[1])])
-dist_str = '{}({})'.format(best_dist[0].name, param_str)
 
+dist_str = '{}({})'.format(best_dist[0].name, param_str)
 ax.set_title(dist_str)
 
 S = data["Adj Close"].iloc[-1]
@@ -245,16 +265,16 @@ round_stock_price = round(S)
 K_minus = [0] *  R 
 K_plus = [0] *  R 
 for i in range(0,  R):
-    K_minus[i] = max(round_stock_price - (R/2)  + i * (0.5), 0)
+    K_minus[i] = max(round_stock_price - R  + i , 0)
 
 for i in range(0,  R):
-    K_plus[i] = round_stock_price + i *  (0.5)
+    K_plus[i] = round_stock_price + i 
 
 K = K_minus + K_plus
 
-print(round_stock_price)
-
 distribution = eval(f"stats.{dist_str}")
+
+
 
 
 print("Checkpoint Echo")############
@@ -280,17 +300,13 @@ def days_calc(year, month, day):
 
 T_days = days_calc(*Target_date)
 
-# print(f"Days until target date: {T_days}")  # target date y/m/d
-
-
 print("Checkpoint Foxtrot") ###########
 
 
 # Body of the black scholes calculation
-# Body of the black scholes calculation
-def black_scholes(name, K, S, T_days, r, option_type='call', show_volatility=False, show_price=False, over_write_price=0, over_write_sigma=0):
+def black_scholes(name, K, S, T_days, r, option_type='call', show_volatility=False, show_price=False, over_write_price=0, over_write_sigma=0, freq = "d"):
     end_date = datetime.today()
-    start_date = end_date - relativedelta(years=5)
+    start_date = end_date - relativedelta(years=amount_years)
     data_option = yf.download(name, start_date, end_date)
     
     if over_write_price > 0:
@@ -309,10 +325,16 @@ def black_scholes(name, K, S, T_days, r, option_type='call', show_volatility=Fal
 
     log_returns = np.log(data["Adj Close"] / data["Adj Close"].shift(1))
     data_option.index = pd.to_datetime(data_option.index)
-    weekly_volatility = log_returns.resample('W').std() * np.sqrt(252)  # weekly volatility
-    monthly_volatility = log_returns.resample('M').std() * np.sqrt(252)  # Monthly volatility
-    sigma = monthly_volatility.iloc[-1]  # the sd for the monthly volatility
-
+    ##Shouldnt this be daily, as we use daily returns.
+    daily_volatility = log_returns.resample('D').std() * np.sqrt(252)  # daily volatility
+    weekly_volatility = log_returns.resample('W').std() * np.sqrt(35.90)  # daily volatility
+    monthly_volatility = log_returns.resample('M').std() * np.sqrt(8.28)  # Monthly volatility
+    
+    ##Change to one of these
+    sigma = (1-w-m) * daily_volatility.iloc[-1]  
+    sigma = (w) * weekly_volatility.iloc[-1]  
+    sigma = (m) * monthly_volatility.iloc[-1]
+        
     if show_volatility:
         plt.figure(figsize=(14, 7))
 
@@ -322,23 +344,41 @@ def black_scholes(name, K, S, T_days, r, option_type='call', show_volatility=Fal
         plt.legend()
 
         plt.subplot(2, 1, 2)
-        plt.plot(weekly_volatility, label='Weekly Price Volatility (Annualized)', color='green')
+        plt.plot(daily_volatility, label='Weekly Price Volatility (Annualized)', color='green')
         plt.title('Weekly Price Volatility')
         plt.legend()
 
         plt.tight_layout()
         plt.show()
         print("Last monthly running volatility:", monthly_volatility.iloc[-1])
-        print("Last weekly running volatility:", weekly_volatility.iloc[-1])
+        print("Last weekly running volatility:", daily_volatility.iloc[-1])
         print("Sigma is:", sigma)
 
     if over_write_sigma > 0:
         sigma = over_write_sigma
     T = T_days / 365  # Convert time to expiration from days to years
+    sigma_percentages = sigma * 100
+    print(f"The volatility of the assets is {sigma_percentages}%")
+ ### Price calc #I think the assymetry of the function of the log returns. or the fact that negative values have no mapping
 
-    ### Price calc
+### Comment one out
+
+    # def option_price(K):
+    #     d1 = (np.log(S / K) + (r + 0.5 * sigma**2 ) * T) / (sigma * np.sqrt(T))
+    #     d2 = d1 - sigma * np.sqrt(T)
+    #     if option_type == 'call':
+    #         return S * scipy.stats.t(df = 5).cdf(d1) - K * np.exp(-r * T) * scipy.stats.t(df = 5).cdf(d2)
+    #     elif option_type == 'put':
+    #         return K * np.exp(-r * T) * scipy.stats.t(df = 5).cdf(-d2) - S * scipy.stats.t(df = 5).cdf(-d1)
+    #     else:
+    #         raise ValueError("Option type must be 'call' or 'put'")
+    
+    # if show_volatility == False and show_price == False:
+    #     return [option_price(k) for k in K]
+
+
     def option_price(K):
-        d1 = (np.log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
+        d1 = (np.log(S / K) + (r + 0.5 * sigma**2 ) * T) / (sigma * np.sqrt(T))
         d2 = d1 - sigma * np.sqrt(T)
         if option_type == 'call':
             return S * distribution.cdf(d1) - K * np.exp(-r * T) * distribution.cdf(d2)
@@ -346,15 +386,14 @@ def black_scholes(name, K, S, T_days, r, option_type='call', show_volatility=Fal
             return K * np.exp(-r * T) * distribution.cdf(-d2) - S * distribution.cdf(-d1)
         else:
             raise ValueError("Option type must be 'call' or 'put'")
-
+    
     if show_volatility == False and show_price == False:
         return [option_price(k) for k in K]
 
-###
-
-
+#Maybe plug in the implied vol, instead of own calc. Due to the different distr we should attain better results
 print("checkpoint Golf") ########
 
+distribution = logistic(loc=0, scale=1)
 
 call_prices = black_scholes(asset, K, S, T_days, r, option_type="call")
 put_prices = black_scholes(asset, K, S, T_days, r, option_type="put")
@@ -368,3 +407,24 @@ print(f"\n Current price of {asset} with target date {Target_date} is {S}.\
       \n the corresponding option prices should be: \n")
 print(df)
     
+
+print(f"The corresponding distribution is {dist_str}")
+
+#plot the options prices
+# Create the figure and axis objects
+plt.figure(figsize=(10, 6))
+# Plot the Call Option Prices against Strike Prices
+plt.plot(df['Strike Price'], df['Option Call Price'], label='Call Option Price', color='blue', marker='o')
+# Plot the Put Option Prices against Strike Prices
+plt.plot(df['Strike Price'], df['Option Put Price'], label='Put Option Price', color='red', marker='x')
+# Add titles and labels
+plt.title('Call and Put Option Prices vs Strike Price')
+plt.xlabel('Strike Price')
+plt.ylabel('Option Price')
+plt.axhline(y=0, color='black', linewidth=1)  # You can adjust linewidth as needed
+
+plt.grid(True)
+plt.legend()
+plt.show()
+
+### test area
